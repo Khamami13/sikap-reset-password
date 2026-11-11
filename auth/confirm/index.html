@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reset Password — SIKAP</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: #f2f5f9; color: #1a1a1a; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { background: #fff; width: 100%; max-width: 420px; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.08); padding: 36px 28px; text-align: center; }
+  .logo { width: 72px; height: 72px; margin: 0 auto 16px; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 24px; }
+  label { display: block; text-align: left; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  input { width: 100%; padding: 12px 14px; border: 1.5px solid #cfd8e3; border-radius: 10px; font-size: 15px; outline: none; }
+  input:focus { border-color: #1565C0; }
+  button { width: 100%; margin-top: 22px; padding: 13px; background: #1565C0; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; }
+  button:disabled { background: #90a4b8; cursor: default; }
+  .msg { margin-top: 18px; padding: 12px 14px; border-radius: 10px; font-size: 14px; line-height: 1.5; display: none; text-align: left; }
+  .msg.ok { display: block; background: #e6f4ea; color: #137333; }
+  .msg.err { display: block; background: #fce8e6; color: #a50e0e; }
+  .msg.info { display: block; background: #e8f0fe; color: #174ea6; }
+  .hidden { display: none; }
+  .foot { margin-top: 22px; font-size: 12px; color: #999; }
+</style>
+</head>
+<body>
+<div class="card">
+  <svg class="logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M32 4 L56 12 V30 C56 46 46 56 32 60 C18 56 8 46 8 30 V12 Z" fill="#1565C0"/>
+    <circle cx="32" cy="26" r="8" fill="#fff"/>
+    <path d="M18 50 C20 42 25 38 32 38 C39 38 44 42 46 50 Z" fill="#fff"/>
+  </svg>
+  <h1>Reset Password</h1>
+  <p class="sub">SIKAP — Sistem Informasi Kepesertaan</p>
+
+  <div id="loading" class="msg info">Memeriksa link reset…</div>
+  <div id="invalid" class="msg err hidden">Link reset tidak valid atau sudah kedaluwarsa. Minta email reset baru dari aplikasi SIKAP.</div>
+
+  <form id="form" class="hidden" autocomplete="off">
+    <label for="pw1">Password baru</label>
+    <input id="pw1" type="password" placeholder="Minimal 6 karakter" minlength="6" required>
+    <label for="pw2">Konfirmasi password baru</label>
+    <input id="pw2" type="password" placeholder="Ketik ulang password baru" minlength="6" required>
+    <button id="submitBtn" type="submit">Simpan Password Baru</button>
+  </form>
+
+  <div id="msg" class="msg"></div>
+  <p class="foot">Setelah password diubah, silakan login di aplikasi SIKAP dengan password baru.</p>
+</div>
+<script>
+(function () {
+  var SUPABASE_URL = 'https://cbulakpcuclmtlemhsqk.supabase.co';
+  var ANON_KEY = 'sb_publishable_EeyTfuVds6hKUQIPTQE6dg_ZmaE9fhp';
+  var loadingEl = document.getElementById('loading');
+  var invalidEl = document.getElementById('invalid');
+  var formEl = document.getElementById('form');
+  var msgEl = document.getElementById('msg');
+  var btn = document.getElementById('submitBtn');
+
+  function show(el, text) { el.textContent = text; el.className = 'msg err'; el.classList.remove('hidden'); }
+  function showOk(text) { msgEl.textContent = text; msgEl.className = 'msg ok'; }
+  function showErr(text) { msgEl.textContent = text; msgEl.className = 'msg err'; }
+
+  function friendlyError(data, fallback) {
+    var m = (data && (data.msg || data.message || data.error_description || data.error)) || '';
+    if (!m) return fallback;
+    if (/expired/i.test(m)) return 'Link reset sudah kedaluwarsa. Minta email reset baru dari aplikasi SIKAP.';
+    if (/same password|should be different/i.test(m)) return 'Password baru tidak boleh sama dengan password lama.';
+    if (/at least 6|Password should/i.test(m)) return 'Password minimal 6 karakter.';
+    return m;
+  }
+
+  var sessionToken = null;
+  function failInvalid() {
+    loadingEl.classList.add('hidden');
+    invalidEl.classList.remove('hidden');
+  }
+
+  function init() {
+    var hash = new URLSearchParams(window.location.hash.slice(1));
+    var query = new URLSearchParams(window.location.search);
+    var type = hash.get('type') || query.get('type') || 'recovery';
+
+    if (hash.get('access_token')) {
+      sessionToken = hash.get('access_token');
+      loadingEl.classList.add('hidden');
+      formEl.classList.remove('hidden');
+      return;
+    }
+    var tokenHash = query.get('token_hash');
+    if (tokenHash) {
+      fetch(SUPABASE_URL + '/auth/v1/verify', {
+        method: 'POST',
+        headers: { 'apikey': ANON_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token_hash: tokenHash, type: type })
+      }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (res.ok && res.d && res.d.access_token) {
+          sessionToken = res.d.access_token;
+          loadingEl.classList.add('hidden');
+          formEl.classList.remove('hidden');
+        } else {
+          failInvalid();
+          if (res.d) showErr(friendlyError(res.d, 'Link reset tidak valid atau sudah kedaluwarsa.'));
+        }
+      }).catch(function () { failInvalid(); });
+      return;
+    }
+    failInvalid();
+  }
+
+  formEl.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var p1 = document.getElementById('pw1').value;
+    var p2 = document.getElementById('pw2').value;
+    if (p1.length < 6) { showErr('Password minimal 6 karakter.'); return; }
+    if (p1 !== p2) { showErr('Konfirmasi password tidak sama dengan password baru.'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Menyimpan…';
+    fetch(SUPABASE_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: { 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + sessionToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: p1 })
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      btn.disabled = false;
+      btn.textContent = 'Simpan Password Baru';
+      if (res.ok) {
+        formEl.classList.add('hidden');
+        showOk('Password berhasil diubah. Silakan login di aplikasi SIKAP dengan password baru.');
+      } else {
+        showErr(friendlyError(res.d, 'Gagal mengubah password. Coba lagi atau minta email reset baru.'));
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = 'Simpan Password Baru';
+      showErr('Tidak dapat terhubung ke server. Periksa koneksi internet lalu coba lagi.');
+    });
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>
